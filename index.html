@@ -1,1 +1,668 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>מערכת הערכת תלקיט אקדמי</title>
 
+  <!-- Tailwind in the browser: convenient for a single-file GitHub Pages site -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React + Babel, so this can run as one standalone index.html -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    html { direction: rtl; }
+    body { margin: 0; }
+
+    @media print {
+      @page {
+        size: A4;
+        margin: 12mm;
+      }
+
+      html, body {
+        background: white !important;
+        color: black !important;
+        direction: rtl;
+      }
+
+      body {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      /* Avoid cutting important blocks in half where possible */
+      section, table, tr, .rounded-lg, .rounded-xl {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      thead {
+        display: table-header-group;
+      }
+
+      tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      /* Keep the printed document clean */
+      button {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+
+const Icon = ({ symbol, className = "" }) => (
+  <span className={`inline-flex items-center justify-center ${className}`} aria-hidden="true">
+    {symbol}
+  </span>
+);
+const Calculator = (props) => <Icon symbol="🧮" {...props} />;
+const User = (props) => <Icon symbol="👤" {...props} />;
+const BookOpen = (props) => <Icon symbol="📘" {...props} />;
+const Lightbulb = (props) => <Icon symbol="💡" {...props} />;
+const FlaskConical = (props) => <Icon symbol="🧪" {...props} />;
+const Award = (props) => <Icon symbol="🏅" {...props} />;
+const Printer = (props) => <Icon symbol="🖨️" {...props} />;
+const Info = (props) => <Icon symbol="ℹ️" {...props} />;
+const Download = (props) => <Icon symbol="📄" {...props} />;
+
+
+const RANKS = [
+  { id: 'lecturer', name: 'מרצה (מסלול מחקרי)', weights: { a: 0.35, b: 0.30, c: 0.30, d: 0.05 } },
+  { id: 'senior_lecturer', name: 'מרצה בכיר (מסלול מחקרי)', weights: { a: 0.25, b: 0.30, c: 0.40, d: 0.05 } },
+  { id: 'adjunct', name: 'מרצה נלווה', weights: { a: 0.40, b: 0.35, c: 0.20, d: 0.05 } },
+  { id: 'senior_adjunct', name: 'מרצה נלווה בכיר', weights: { a: 0.30, b: 0.35, c: 0.30, d: 0.05 } },
+];
+
+const SECTION_C_DATA = [
+  { id: 'c1', name: 'פרטים מלאים עבור עבודת הדוקטורט', type: 'fixed', value: 5 },
+  { id: 'c2', name: 'מאמר בכתב עת אקדמי שפיט בעברית מתוך רשימת ות"ת', type: 'fixed', value: 8 },
+  { id: 'c3', name: 'מאמר בכתב עת אקדמי שפיט בעברית שלא ברשימת ות"ת', type: 'fixed', value: 4 },
+  { id: 'c4', name: 'מאמר בכתב עת אקדמי שפיט בלועזית בדרוג 1', type: 'fixed', value: 12 },
+  { id: 'c5', name: 'מאמר בכתב עת אקדמי שפיט בלועזית בדרוג 2', type: 'fixed', value: 10 },
+  { id: 'c6', name: 'מאמר בכתב עת אקדמי שפיט בלועזית בדרוג 3', type: 'fixed', value: 8 },
+  { id: 'c7', name: 'מאמר בכתב עת אקדמי שפיט בלועזית בדרוג 4', type: 'fixed', value: 6 },
+  { id: 'c8', name: 'מאמר בכתב עת אקדמי שפיט בלועזית ללא דרוג', type: 'fixed', value: 4 },
+  { id: 'c9', name: 'מאמר בכתב עת אקדמי לא שפיט בלועזית', type: 'fixed', value: 2 },
+  { id: 'c10', name: 'מאמר בכתב עת למורים מקצועי/תורני', type: 'fixed', value: 4 },
+  { id: 'c11', name: 'עריכה של כתב עת (עבור עריכה שנתית)', type: 'upto', max: 4 },
+  { id: 'c12', name: 'שיפוט של מאמרים בכתב עת אקדמי (עבור מאמר)', type: 'upto', max: 3, perItem: true },
+  { id: 'c13', name: 'עריכה של ספר אקדמי (כותבים שונים)', type: 'upto', max: 6 },
+  { id: 'c14', name: 'דו"ח מחקר לגוף חוץ-מכללתי', type: 'upto', max: 4 },
+  { id: 'c15', name: 'דו"ח מחקר פנים-מכללתי', type: 'upto', max: 2 },
+  { id: 'c16', name: 'כתיבת ספר בהוצאה אקדמית', type: 'upto', max: 30 },
+  { id: 'c17', name: 'ההדרה מדעית של ספר תשתיתי', type: 'upto', max: 15 },
+  { id: 'c18', name: 'תרגום של ספר אקדמי', type: 'upto', max: 12 },
+  { id: 'c19', name: 'כתיבת פרק בספר בהוצאה אקדמית', type: 'upto', max: 8 },
+  { id: 'c20', name: 'מאמר שפורסם בספר של כנס אקדמי בין-לאומי', type: 'upto', max: 5 },
+  { id: 'c21', name: 'הרצאה בכנס אקדמי בחו"ל או כנס בינלאומי בארץ', type: 'fixed', value: 5 },
+  { id: 'c22', name: 'הרצאה בכנס אקדמי בארץ', type: 'fixed', value: 4 },
+  { id: 'c23', name: 'פוסטר או השתתפות בפאנל בכנס אקדמי', type: 'fixed', value: 3 },
+  { id: 'c24', name: 'כתיבת ערך באנציקלופדיה', type: 'upto', max: 5 },
+  { id: 'c25', name: 'כתיבת יצירה מוזיקלית / הפקת מופע אומנותי (מחוץ למערכת)', type: 'upto', max: 8 },
+  { id: 'c26', name: 'הפקה פומבית של יצירה מוזיקלית / ניצוח (ביצוע ראשון)', type: 'upto', max: 8 },
+  { id: 'c27', name: 'הנחייה של תלמידי מחקר לתזה או לדוקטורט', type: 'upto', max: 15 },
+  { id: 'c28', name: 'תערוכת ציורים ואומנות פלסטית', type: 'upto', max: 15 },
+];
+
+const InputField = ({ label, value, onChange, max, min=0, note }) => {
+  const [localVal, setLocalVal] = useState(value === 0 ? '' : String(value));
+  const [isError, setIsError] = useState(false);
+
+  useEffect(() => {
+    setLocalVal(value === 0 ? '' : String(value));
+  }, [value]);
+
+  const handleChange = (e) => {
+    const rawVal = e.target.value;
+    setLocalVal(rawVal);
+    
+    if (rawVal !== '') {
+      const parsed = parseFloat(rawVal);
+      if (!isNaN(parsed) && parsed > max) {
+        setIsError(true);
+      } else {
+        setIsError(false);
+      }
+    } else {
+      setIsError(false);
+    }
+  };
+
+  const handleBlur = () => {
+    let finalVal = 0;
+    if (localVal !== '') {
+      finalVal = parseFloat(localVal);
+      if (isNaN(finalVal)) finalVal = 0;
+      if (finalVal > max) finalVal = max;
+      if (finalVal < min) finalVal = min;
+    }
+    
+    setLocalVal(finalVal === 0 ? '' : String(finalVal));
+    setIsError(false);
+    onChange(finalVal);
+  };
+
+  return (
+    <>
+      <div className="print:hidden flex flex-col mb-4 relative">
+        <div className="flex justify-between items-center mb-1">
+          <label className="text-sm font-medium text-slate-700">{label}</label>
+          <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">עד {max} נק'</span>
+        </div>
+        {note && <p className="text-xs text-slate-500 mb-2">{note}</p>}
+        <input
+          type="text"
+          value={localVal}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          placeholder="0"
+          className={`border rounded-md p-2 focus:outline-none focus:ring-2 transition-all text-left dir-ltr ${
+            isError 
+              ? 'border-red-400 focus:ring-red-500 bg-red-50' 
+              : 'border-slate-300 focus:ring-blue-500 focus:border-blue-500'
+          }`}
+          dir="ltr"
+        />
+        {isError && (
+          <span className="text-xs text-red-500 mt-1 absolute -bottom-5 right-0">חריגה מהמקסימום (יתוקן בסיום)</span>
+        )}
+      </div>
+
+      <div className="hidden print:flex flex-col mb-4 pb-2 border-b border-slate-100 last:border-0">
+        <div className="flex justify-between items-center">
+          <span className="text-sm font-semibold text-slate-800">{label}</span>
+          <span className="text-lg font-bold text-blue-700">{value || 0} נק'</span>
+        </div>
+        {note && <span className="text-xs text-slate-500">{note}</span>}
+      </div>
+    </>
+  );
+};
+
+function App() {
+  const [candidate, setCandidate] = useState({
+    name: '',
+    specialization: '',
+    currentRank: '',
+    rankDate: '',
+    targetRank: RANKS[0].id,
+    evaluators: ''
+  });
+
+  const [secA, setSecA] = useState({ a1_degree: 0, a2_expansion: 0, a3_philosophy: 0, a4_feedback: 0, a5_students: 0, a6_peers: 0 });
+  const [secB, setSecB] = useState({ b1_dept: 0, b2_college: 0 });
+  const [secC, setSecC] = useState(SECTION_C_DATA.map(item => ({ id: item.id, count: 0, manualScore: 0 })));
+  const [secD, setSecD] = useState(''); 
+
+  const [isPrintMode, setIsPrintMode] = useState(false);
+
+  const totalA = Math.min(100, Object.values(secA).reduce((sum, val) => sum + (Number(val) || 0), 0));
+  const totalB = Math.min(100, Object.values(secB).reduce((sum, val) => sum + (Number(val) || 0), 0));
+  
+  const totalC = Math.min(100, secC.reduce((sum, item) => {
+    const dataDef = SECTION_C_DATA.find(d => d.id === item.id);
+    if (dataDef.type === 'fixed') {
+      return sum + ((Number(item.count) || 0) * dataDef.value);
+    } else {
+      return sum + (Number(item.manualScore) || 0);
+    }
+  }, 0));
+
+  const totalD = Math.min(5, Number(secD) || 0);
+  const selectedRankDef = RANKS.find(r => r.id === candidate.targetRank);
+  
+  const finalScore = (totalA * selectedRankDef.weights.a) + 
+                     (totalB * selectedRankDef.weights.b) + 
+                     (totalC * selectedRankDef.weights.c) + 
+                     totalD; 
+
+  const handleSecCChange = (id, field, value) => {
+    setSecC(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+
+  const generatePDF = () => {
+    // Switch the UI to the dedicated print layout first.
+    setIsPrintMode(true);
+
+    // Wait for React to render the current entered values in print mode,
+    // then open the browser print dialog. Choosing "Save as PDF" creates the PDF.
+    setTimeout(() => {
+      const previousTitle = document.title;
+      const candidateName = (candidate.name || 'מועמד').trim();
+      document.title = `הערכת תלקיט - ${candidateName}`;
+
+      const cleanupAfterPrint = () => {
+        setIsPrintMode(false);
+        document.title = previousTitle;
+        window.removeEventListener('afterprint', cleanupAfterPrint);
+      };
+
+      window.addEventListener('afterprint', cleanupAfterPrint);
+      window.print();
+    }, 250);
+  };
+
+  return (
+    <div className={`min-h-screen ${isPrintMode ? 'bg-white' : 'bg-slate-50'} text-slate-800`} dir="rtl" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      
+      {/* Top Navbar / Header (Hidden in Print Mode) */}
+      {!isPrintMode && (
+        <header className="bg-blue-900 text-white shadow-md sticky top-0 z-50 print:hidden">
+          <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <Calculator className="w-6 h-6 text-blue-300" />
+              <h1 className="text-xl font-bold">מערכת הערכת תלקיט אקדמי</h1>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="bg-blue-800 px-4 py-2 rounded-lg font-mono text-xl border border-blue-700">
+                ציון סופי: <span className="font-bold text-yellow-300">{finalScore.toFixed(2)}</span>
+              </div>
+              <button 
+                onClick={generatePDF}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-md flex items-center gap-2 transition-colors font-semibold shadow-sm border border-emerald-700"
+              >
+                <Download className="w-5 h-5" />
+                <span>הורד כ-PDF</span>
+              </button>
+            </div>
+          </div>
+        </header>
+      )}
+
+      {/* Print Mode Top Bar (Only visible when fallback print mode is active) */}
+      {isPrintMode && (
+        <div className="bg-yellow-100 border-b-2 border-yellow-300 text-yellow-900 p-4 text-center sticky top-0 z-50 shadow-md print:hidden flex flex-col sm:flex-row justify-center items-center gap-4">
+          <div>
+            <p className="font-bold text-lg">המערכת מוכנה לשמירה <Printer className="inline w-5 h-5 ml-1"/></p>
+            <p className="text-sm">אם חלון השמירה לא נפתח אוטומטית, לחץ כעת על <kbd className="bg-yellow-200 px-2 py-1 rounded border border-yellow-400 font-mono mx-1 text-black font-bold">Ctrl + P</kbd> במקלדת כדי לשמור כ-PDF.</p>
+          </div>
+          <button 
+            onClick={() => setIsPrintMode(false)}
+            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md font-bold shadow-sm transition-colors"
+          >
+            חזור לעריכה
+          </button>
+        </div>
+      )}
+
+      {/* Print Only Header (Visible only in Print Mode) */}
+      {isPrintMode && (
+        <div className="container mx-auto px-4 py-6 border-b-2 border-slate-800 mb-6">
+          <h1 className="text-3xl font-bold text-center text-slate-900 mb-2">טופס הערכת תלקיט אישי לקראת קידום</h1>
+          <p className="text-center text-slate-600">הופק באמצעות המערכת המקוונת להערכת תלקיטים</p>
+        </div>
+      )}
+
+      <main className="container mx-auto px-4 py-8 max-w-5xl">
+        
+        {/* Section: Candidate Info */}
+        <section className={`bg-white rounded-xl ${isPrintMode ? 'shadow-none border-b-2 border-slate-300 pb-8 rounded-none' : 'shadow-sm border border-slate-200 p-6'} mb-8`}>
+          {!isPrintMode && (
+            <div className="flex items-center gap-2 mb-6 border-b border-slate-100 pb-4">
+              <User className="w-5 h-5 text-blue-600" />
+              <h2 className="text-xl font-bold text-slate-800">פרטי המועמד וההערכה</h2>
+            </div>
+          )}
+          
+          <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 ${isPrintMode ? 'gap-y-8 gap-x-4' : 'gap-6'}`}>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">שם המועמד</label>
+              {!isPrintMode ? (
+                <input type="text" value={candidate.name} onChange={e => setCandidate({...candidate, name: e.target.value})} className="w-full border border-slate-300 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+              ) : (
+                <div className="text-lg font-semibold border-b border-dashed border-slate-300 pb-1">{candidate.name || '-'}</div>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">תחום התמחות</label>
+              {!isPrintMode ? (
+                <input type="text" value={candidate.specialization} onChange={e => setCandidate({...candidate, specialization: e.target.value})} className="w-full border border-slate-300 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+              ) : (
+                <div className="text-lg font-semibold border-b border-dashed border-slate-300 pb-1">{candidate.specialization || '-'}</div>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">דרגה אקדמית נוכחית</label>
+              {!isPrintMode ? (
+                <input type="text" value={candidate.currentRank} onChange={e => setCandidate({...candidate, currentRank: e.target.value})} className="w-full border border-slate-300 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+              ) : (
+                <div className="text-lg font-semibold border-b border-dashed border-slate-300 pb-1">{candidate.currentRank || '-'}</div>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">תאריך קבלת הדרגה</label>
+              {!isPrintMode ? (
+                <input type="text" value={candidate.rankDate} onChange={e => setCandidate({...candidate, rankDate: e.target.value})} className="w-full border border-slate-300 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+              ) : (
+                <div className="text-lg font-semibold border-b border-dashed border-slate-300 pb-1">{candidate.rankDate || '-'}</div>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-blue-700 mb-1">מועמד לדרגה</label>
+              {!isPrintMode ? (
+                <select 
+                  value={candidate.targetRank} 
+                  onChange={e => setCandidate({...candidate, targetRank: e.target.value})} 
+                  className="w-full border border-blue-300 bg-blue-50 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-blue-900"
+                >
+                  {RANKS.map(r => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <div className="text-lg font-bold text-blue-800 border-b border-dashed border-slate-300 pb-1">{selectedRankDef.name}</div>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">שמות המעריכים</label>
+              {!isPrintMode ? (
+                <input type="text" value={candidate.evaluators} onChange={e => setCandidate({...candidate, evaluators: e.target.value})} placeholder="פרופ' פלוני, ד״ר אלמוני" className="w-full border border-slate-300 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+              ) : (
+                <div className="text-lg font-semibold border-b border-dashed border-slate-300 pb-1">{candidate.evaluators || '-'}</div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Section A */}
+        <section className={`bg-white rounded-xl ${isPrintMode ? 'shadow-none border-none mb-8' : 'shadow-sm border border-slate-200 mb-8 overflow-hidden'}`}>
+          <div className={`${isPrintMode ? 'bg-transparent border-b-2 border-slate-800 mb-4 pb-2 p-0' : 'bg-blue-50 border-b border-blue-100 p-4'} flex justify-between items-center`}>
+            <div className="flex items-center gap-2">
+              {!isPrintMode && <BookOpen className="w-5 h-5 text-blue-600" />}
+              <h2 className="text-lg font-bold text-slate-800">פרק א': איכות ההוראה ועיצובה</h2>
+            </div>
+            <div className="text-left">
+              <span className="text-sm text-slate-500">משקל: {selectedRankDef.weights.a * 100}% | סה"כ לפרק: </span>
+              <span className={`font-bold ${totalA === 100 ? (isPrintMode ? 'text-slate-900' : 'text-green-600') : (isPrintMode ? 'text-slate-900' : 'text-blue-700')}`}>{totalA.toFixed(1)} / 100</span>
+            </div>
+          </div>
+          <div className={`${isPrintMode ? 'p-0' : 'p-6'} grid grid-cols-1 md:grid-cols-2 gap-8`}>
+            <div>
+              <h3 className="font-bold text-slate-700 mb-4 border-b pb-2">ידע בתחום הדעת (עד 50%)</h3>
+              <InputField 
+                label="ידע רחב ומעמיק (תארים מתקדמים, דוקטורט)" 
+                max={25} value={secA.a1_degree} onChange={val => setSecA({...secA, a1_degree: val})} 
+              />
+              <InputField 
+                label="הרחבת השכלה (קורסים, כנסים, השתלמויות)" 
+                max={25} value={secA.a2_expansion} onChange={val => setSecA({...secA, a2_expansion: val})} 
+              />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-700 mb-4 border-b pb-2">איכות ההוראה (עד 35%)</h3>
+              <InputField 
+                label="תפיסת עולם חינוכית, חדשנות ויצירתיות" 
+                max={25} value={secA.a3_philosophy} onChange={val => setSecA({...secA, a3_philosophy: val})} 
+              />
+              <InputField 
+                label="משובי סטודנטים לאיכות הקורס" 
+                max={10} value={secA.a4_feedback} onChange={val => setSecA({...secA, a4_feedback: val})} 
+              />
+              
+              <h3 className="font-bold text-slate-700 mt-6 mb-4 border-b pb-2">המרצה מול סטודנטים ועמיתים (עד 15%)</h3>
+              <div className={`grid ${isPrintMode ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
+                <InputField 
+                  label="יחסים עם סטודנטים" 
+                  max={7} value={secA.a5_students} onChange={val => setSecA({...secA, a5_students: val})} 
+                />
+                <InputField 
+                  label="שיתוף פעולה בצוות" 
+                  max={8} value={secA.a6_peers} onChange={val => setSecA({...secA, a6_peers: val})} 
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Section B */}
+        <section className={`bg-white rounded-xl ${isPrintMode ? 'shadow-none border-none mb-8' : 'shadow-sm border border-slate-200 mb-8 overflow-hidden'}`}>
+          <div className={`${isPrintMode ? 'bg-transparent border-b-2 border-slate-800 mb-4 pb-2 p-0' : 'bg-emerald-50 border-b border-emerald-100 p-4'} flex justify-between items-center`}>
+            <div className="flex items-center gap-2">
+              {!isPrintMode && <Lightbulb className="w-5 h-5 text-emerald-600" />}
+              <h2 className="text-lg font-bold text-slate-800">פרק ב': מעורבות ויוזמות בחוג ובמכללה</h2>
+            </div>
+            <div className="text-left">
+              <span className="text-sm text-slate-500">משקל: {selectedRankDef.weights.b * 100}% | סה"כ לפרק: </span>
+              <span className={`font-bold ${totalB === 100 ? (isPrintMode ? 'text-slate-900' : 'text-green-600') : (isPrintMode ? 'text-slate-900' : 'text-emerald-700')}`}>{totalB.toFixed(1)} / 100</span>
+            </div>
+          </div>
+          <div className={`${isPrintMode ? 'p-0' : 'p-6'} grid grid-cols-1 md:grid-cols-2 gap-8`}>
+            <div>
+              <h3 className="font-bold text-slate-700 mb-4 border-b pb-2">ב.1.1 מעורבות בחוג (עד 40%)</h3>
+              <InputField 
+                label="חברות בוועדות, פיתוח קורסים, ארגון אירועים בחוג" 
+                note="ציון כולל להערכת הפעילות הפנים-חוגית"
+                max={40} value={secB.b1_dept} onChange={val => setSecB({...secB, b1_dept: val})} 
+              />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-700 mb-4 border-b pb-2">ב.2.1 מעורבות במערכת ובמכללה (עד 60%)</h3>
+              <InputField 
+                label="תפקידים מרכזיים, ועדות חוץ, ארגון ימי עיון, פיתוח חומרי עזר" 
+                note="ציון כולל להערכת הפעילות הכלל-מכללתית ומחוצה לה"
+                max={60} value={secB.b2_college} onChange={val => setSecB({...secB, b2_college: val})} 
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* Section C */}
+        <section className={`bg-white rounded-xl ${isPrintMode ? 'shadow-none border-none mb-8' : 'shadow-sm border border-slate-200 mb-8 overflow-hidden'}`}>
+          <div className={`${isPrintMode ? 'bg-transparent border-b-2 border-slate-800 mb-4 pb-2 p-0' : 'bg-purple-50 border-b border-purple-100 p-4'} flex justify-between items-center`}>
+            <div className="flex items-center gap-2">
+              {!isPrintMode && <FlaskConical className="w-5 h-5 text-purple-600" />}
+              <h2 className="text-lg font-bold text-slate-800">פרק ג': פעילות מחקרית אקדמית</h2>
+            </div>
+            <div className="text-left">
+              <span className="text-sm text-slate-500">משקל: {selectedRankDef.weights.c * 100}% | סה"כ לפרק: </span>
+              <span className={`font-bold ${totalC === 100 ? (isPrintMode ? 'text-slate-900' : 'text-green-600') : (isPrintMode ? 'text-slate-900' : 'text-purple-700')}`}>{totalC.toFixed(1)} / 100</span>
+              {(totalC === 100 && !isPrintMode) && <span className="text-xs text-green-600 block">הגעת למקסימום הנקודות בפרק זה</span>}
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className={`w-full text-sm text-right ${isPrintMode ? 'border-collapse border border-slate-300' : ''}`}>
+              <thead className={`${isPrintMode ? 'bg-slate-100 border-slate-300' : 'bg-slate-50 border-b'} text-slate-600`}>
+                <tr>
+                  <th className={`p-3 font-semibold ${isPrintMode ? 'border border-slate-300' : ''}`}>סוג הפרסום / הפעילות</th>
+                  <th className={`p-3 font-semibold text-center ${isPrintMode ? 'border border-slate-300' : ''}`}>ניקוד לפריט</th>
+                  <th className={`p-3 font-semibold text-center ${isPrintMode ? 'border border-slate-300' : ''}`}>כמות פריטים</th>
+                  <th className={`p-3 font-semibold text-center ${isPrintMode ? 'border border-slate-300' : ''}`}>ניקוד שניתן</th>
+                  <th className={`p-3 font-semibold text-center ${isPrintMode ? 'bg-slate-100 border border-slate-300' : 'bg-purple-50'}`}>סה"כ לשורה</th>
+                </tr>
+              </thead>
+              <tbody>
+                {SECTION_C_DATA.map((item) => {
+                  const stateItem = secC.find(s => s.id === item.id);
+                  const isFixed = item.type === 'fixed';
+                  const rowTotal = isFixed 
+                    ? (stateItem.count * item.value) 
+                    : stateItem.manualScore;
+
+                  const hideInPrint = (rowTotal === 0 && stateItem.count === 0) && isPrintMode;
+
+                  if (hideInPrint) return null;
+
+                  return (
+                    <tr key={item.id} className={`border-b hover:bg-slate-50 ${isPrintMode ? 'border-slate-300' : ''}`}>
+                      <td className={`p-3 text-slate-800 ${isPrintMode ? 'border border-slate-300' : ''}`}>{item.name}</td>
+                      <td className={`p-3 text-center font-mono text-slate-600 ${isPrintMode ? 'border border-slate-300' : ''}`}>
+                        {isFixed ? item.value : `עד ${item.max}`}
+                      </td>
+                      <td className={`p-3 text-center ${isPrintMode ? 'border border-slate-300' : ''}`}>
+                        {!isPrintMode ? (
+                          <input 
+                            type="number" min="0" 
+                            className="w-16 border border-slate-300 rounded p-1 text-center focus:ring-1 focus:ring-purple-500 outline-none"
+                            value={stateItem.count === 0 ? '' : stateItem.count}
+                            onChange={(e) => handleSecCChange(item.id, 'count', parseInt(e.target.value) || 0)}
+                            placeholder="0"
+                          />
+                        ) : (
+                          <div className="font-bold">{stateItem.count || '-'}</div>
+                        )}
+                      </td>
+                      <td className={`p-3 text-center ${isPrintMode ? 'border border-slate-300' : ''}`}>
+                        {!isPrintMode ? (
+                          <>
+                            {!isFixed && (
+                              <input 
+                                type="number" min="0" max={item.perItem ? item.max * (stateItem.count || 1) : item.max}
+                                className="w-20 border border-slate-300 rounded p-1 text-center focus:ring-1 focus:ring-purple-500 outline-none bg-yellow-50"
+                                value={stateItem.manualScore === 0 ? '' : stateItem.manualScore}
+                                onChange={(e) => {
+                                    let val = parseFloat(e.target.value) || 0;
+                                    let maxAllowed = item.perItem ? item.max * Math.max(1, stateItem.count) : item.max;
+                                    if(val > maxAllowed) val = maxAllowed;
+                                    handleSecCChange(item.id, 'manualScore', val);
+                                }}
+                                placeholder={`0 - ${item.perItem && stateItem.count > 0 ? item.max * stateItem.count : item.max}`}
+                              />
+                            )}
+                            {isFixed && <span className="text-slate-300">-</span>}
+                          </>
+                        ) : (
+                          <div className="font-bold">{!isFixed ? (stateItem.manualScore || '-') : '-'}</div>
+                        )}
+                      </td>
+                      <td className={`p-3 text-center font-bold ${isPrintMode ? 'bg-slate-50 text-slate-900 border border-slate-300' : 'text-purple-700 bg-purple-50/50'}`}>
+                        {rowTotal > 0 ? rowTotal : '-'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          {!isPrintMode && (
+            <div className="bg-slate-50 p-3 text-xs text-slate-500 flex items-center gap-2">
+              <Info className="w-4 h-4" />
+              <p><strong>שימו לב:</strong> עבור סעיפים מסוג "עד X נקודות", יש להזין את הציון הסופי המוענק לשורה זו בעמודה "ניקוד שניתן". סה"כ הנקודות בפרק כולו יוגבל ל-100 אחוזים בחישוב הסופי.</p>
+            </div>
+          )}
+        </section>
+
+        {/* Section D */}
+        <section className={`bg-white rounded-xl ${isPrintMode ? 'shadow-none border-none mb-8' : 'shadow-sm border border-slate-200 mb-8 overflow-hidden'}`}>
+          <div className={`${isPrintMode ? 'bg-transparent border-b-2 border-slate-800 mb-4 pb-2 p-0' : 'bg-orange-50 border-b border-orange-100 p-4'} flex justify-between items-center`}>
+            <div className="flex items-center gap-2">
+              {!isPrintMode && <Award className="w-5 h-5 text-orange-600" />}
+              <h2 className="text-lg font-bold text-slate-800">פרק ד': הערכה כללית של התלקיט</h2>
+            </div>
+            <div className="text-left">
+              <span className="text-sm text-slate-500">משקל: 5% (5 נק' מהציון הסופי) | סה"כ: </span>
+              <span className={`font-bold ${isPrintMode ? 'text-slate-900' : 'text-orange-700'}`}>{totalD.toFixed(1)} / 5</span>
+            </div>
+          </div>
+          <div className={`${isPrintMode ? 'p-0' : 'p-6'}`}>
+            <div className="max-w-md">
+              <label className="block text-sm font-bold text-slate-700 mb-2">ציון התרשמות כללית (הערכה הוליסטית של התיק)</label>
+              <div className="flex items-center gap-4">
+                {!isPrintMode ? (
+                  <div className="flex items-center gap-4">
+                    <input 
+                      type="number" min="0" max="5" step="0.5"
+                      className="w-24 border-2 border-orange-200 rounded-lg p-3 text-center text-xl font-bold focus:ring-2 focus:ring-orange-500 outline-none"
+                      value={secD}
+                      onChange={(e) => {
+                        let val = e.target.value;
+                        if (val === '') {
+                           setSecD('');
+                           return;
+                        }
+                        let numVal = parseFloat(val);
+                        if(numVal > 5) numVal = 5;
+                        if(numVal < 0) numVal = 0;
+                        setSecD(numVal);
+                      }}
+                      placeholder="0 - 5"
+                    />
+                    <span className="text-slate-500">נקודות מתוך 5 נקודות אפשריות</span>
+                  </div>
+                ) : (
+                  <div className="text-2xl font-bold text-slate-900 border-2 border-slate-300 p-3 rounded-lg min-w-[6rem] text-center">
+                     {secD || 0}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Final Summary Card */}
+        <section className={`${isPrintMode ? 'bg-white text-black border-2 border-slate-800 shadow-none' : 'bg-slate-800 text-white rounded-xl shadow-lg'} p-8 mb-16 relative overflow-hidden`}>
+          {!isPrintMode && <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 opacity-10 rounded-full -translate-y-10 translate-x-10"></div>}
+          
+          <h2 className={`text-2xl font-bold mb-6 border-b ${isPrintMode ? 'border-slate-300' : 'border-slate-600'} pb-4`}>סיכום ציונים ושקלול סופי</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 text-center">
+            <div className={`${isPrintMode ? 'bg-slate-50 border border-slate-300' : 'bg-slate-700'} rounded-lg p-4`}>
+              <div className={`text-sm mb-1 ${isPrintMode ? 'text-slate-600' : 'text-slate-300'}`}>א. איכות ההוראה</div>
+              <div className={`text-2xl ${isPrintMode ? 'font-bold' : 'font-mono'}`}>{totalA.toFixed(1)}</div>
+              <div className={`text-xs mt-1 ${isPrintMode ? 'text-blue-600' : 'text-blue-300'}`}>משקל: {selectedRankDef.weights.a * 100}%</div>
+            </div>
+            <div className={`${isPrintMode ? 'bg-slate-50 border border-slate-300' : 'bg-slate-700'} rounded-lg p-4`}>
+              <div className={`text-sm mb-1 ${isPrintMode ? 'text-slate-600' : 'text-slate-300'}`}>ב. מעורבות ויוזמות</div>
+              <div className={`text-2xl ${isPrintMode ? 'font-bold' : 'font-mono'}`}>{totalB.toFixed(1)}</div>
+              <div className={`text-xs mt-1 ${isPrintMode ? 'text-emerald-600' : 'text-emerald-300'}`}>משקל: {selectedRankDef.weights.b * 100}%</div>
+            </div>
+            <div className={`${isPrintMode ? 'bg-slate-50 border border-slate-300' : 'bg-slate-700'} rounded-lg p-4`}>
+              <div className={`text-sm mb-1 ${isPrintMode ? 'text-slate-600' : 'text-slate-300'}`}>ג. מחקר אקדמי</div>
+              <div className={`text-2xl ${isPrintMode ? 'font-bold' : 'font-mono'}`}>{totalC.toFixed(1)}</div>
+              <div className={`text-xs mt-1 ${isPrintMode ? 'text-purple-600' : 'text-purple-300'}`}>משקל: {selectedRankDef.weights.c * 100}%</div>
+            </div>
+            <div className={`${isPrintMode ? 'bg-slate-50 border border-slate-300' : 'bg-slate-700'} rounded-lg p-4`}>
+              <div className={`text-sm mb-1 ${isPrintMode ? 'text-slate-600' : 'text-slate-300'}`}>ד. התרשמות כללית</div>
+              <div className={`text-2xl ${isPrintMode ? 'font-bold' : 'font-mono'}`}>{totalD.toFixed(1)}</div>
+              <div className={`text-xs mt-1 ${isPrintMode ? 'text-orange-600' : 'text-orange-300'}`}>משקל: 5% (ישיר)</div>
+            </div>
+          </div>
+
+          <div className={`flex flex-col md:flex-row justify-between items-center p-6 ${isPrintMode ? 'bg-transparent border-t-2 border-b-2 border-l-0 border-r-0 border-slate-800 rounded-none' : 'rounded-lg bg-blue-900 border border-blue-700'}`}>
+            <div>
+              <p className={`text-sm ${isPrintMode ? 'text-slate-600' : 'text-blue-200'}`}>שקלול עבור דרגת מועמדות:</p>
+              <h3 className={`text-xl font-bold ${isPrintMode ? 'text-slate-900' : ''}`}>{selectedRankDef.name}</h3>
+            </div>
+            <div className="text-left mt-4 md:mt-0">
+              <p className={`text-sm ${isPrintMode ? 'text-slate-600' : 'text-blue-200'}`}>ציון סופי למועמד:</p>
+              <div className={`text-5xl font-bold font-mono ${isPrintMode ? 'text-black' : 'text-yellow-400'}`}>
+                {finalScore.toFixed(2)}
+              </div>
+            </div>
+          </div>
+
+          <div className={`mt-12 pt-8 border-t ${isPrintMode ? 'border-slate-300 text-black' : 'border-slate-600 text-slate-400'} flex justify-between`}>
+             <div>
+                <p>חתימת מעריך 1: _____________________</p>
+             </div>
+             <div>
+                <p>חתימת מעריך 2: _____________________</p>
+             </div>
+             <div>
+                <p>תאריך: ________________</p>
+             </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
